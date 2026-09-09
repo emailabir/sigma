@@ -1,0 +1,37 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import ts from 'typescript';
+const compiled=ts.transpileModule(fs.readFileSync('lib/strategy.ts','utf8'),{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText;
+const strategyUrl='data:text/javascript;base64,'+Buffer.from(compiled).toString('base64');
+const {analyze,cleanBars}=await import(strategyUrl);
+const now=Date.parse('2026-09-09T12:00:00Z');
+const dates=[];for(let t=Date.parse('2026-09-08T04:00:00Z');dates.length<300;t-=86400000){if(![0,6].includes(new Date(t).getUTCDay()))dates.unshift(new Date(t).toISOString());}
+const make=(fn,range=2)=>dates.map((t,i)=>{const c=fn(i);return {t,o:c,h:c+range,l:c-range,c,v:1000000}});
+const spy=make(i=>400+i*.02);
+const b=make(i=>100+i*.04+Math.sin(i)*2);
+const level=Math.max(...b.slice(-21,-1).map(x=>x.h));b.at(-1).c=level+.1;b.at(-1).o=b.at(-1).c;b.at(-1).h=b.at(-1).c+.2;b.at(-1).l=b.at(-1).c-2;b.at(-1).v=2000000;
+const s=analyze(b,spy,now);
+assert.equal(s.status,'Qualified',JSON.stringify(s.checks));
+assert.equal(s.level,level,'Breakout excludes current bar');
+assert.equal(s.rvol,2,'Relative volume excludes signal day');
+assert.equal(s.score,7);assert.ok(s.stop<s.entry&&s.entry<s.target);
+assert.ok(Math.abs((s.target-s.entry)/(s.entry-s.stop)-2)<.01);
+assert.equal(analyze(b.slice(-100),spy,now).status,'Insufficient data');
+assert.equal(analyze(b,spy,now+7*86400000).status,'Stale data');
+assert.equal(analyze(b.slice(0,-1),spy,now).status,'Stale data');
+assert.equal(analyze(b.filter((_,i)=>i!==250),spy,now).status,'Insufficient data');
+const lowVol=structuredClone(b);lowVol.at(-1).v=1000000;assert.equal(analyze(lowVol,spy,now).status,'Watch');assert.equal(analyze(lowVol,spy,now).entry,undefined);
+const flat=make(()=>100);const f=analyze(flat,spy,now);assert.equal(f.rsi,50);assert.ok(Math.abs(f.atr-4)<1e-10);assert.equal(f.sma50,100);assert.equal(f.sma200,100);assert.ok(Math.abs(f.ema-100)<1e-10);assert.equal(f.status,'Not qualified');
+const invalid=structuredClone(b);invalid[5].h=0;assert.equal(cleanBars([...invalid,invalid[6]]).length,299);
+let source=fs.readFileSync('app/api/bars/route.ts','utf8').replace("import universe from '@/lib/universe.json';",'const universe='+fs.readFileSync('lib/universe.json','utf8')+';').replace("from '@/lib/strategy'",`from '${strategyUrl}'`);
+const route=await import('data:text/javascript;base64,'+Buffer.from(ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText).toString('base64'));
+const req=body=>new Request('https://screener.test/api/bars',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+assert.equal((await route.POST(req({}))).status,400);
+assert.equal((await route.POST(req({key:'123456',secret:'123456',symbols:['NOT-IN-SP500']}))).status,400);
+assert.equal((await route.POST(new Request('https://screener.test/api/bars',{method:'POST',headers:{origin:'https://other.test'},body:'{}'}))).status,403);
+const nativeFetch=globalThis.fetch;let calls=0;
+globalThis.fetch=async(url,opts)=>{calls++;const u=new URL(url);assert.equal(u.origin,'https://data.alpaca.markets');assert.equal(u.searchParams.get('feed'),'sip');assert.equal(u.searchParams.get('adjustment'),'split');assert.ok(Date.parse(u.searchParams.get('end'))<Date.now()-15*60000);assert.equal(opts.headers['APCA-API-KEY-ID'],'123456');return Response.json({bars:{AAPL:calls===1?b.slice(0,150):b.slice(150)},next_page_token:calls===1?'page2':null})};
+const response=await route.POST(req({key:'123456',secret:'123456',symbols:['AAPL']}));assert.equal(response.status,200);assert.equal((await response.json()).bars.AAPL.length,300);assert.equal(calls,2);
+globalThis.fetch=async()=>new Response('',{status:401});const denied=await route.POST(req({key:'123456',secret:'123456',symbols:['AAPL']}));assert.equal(denied.status,502);assert.match((await denied.json()).error,/credentials/);globalThis.fetch=nativeFetch;
+console.log('PASS: indicator values, qualified/watch/rejected setups, entry risk, missing/stale history, invalid bars, API validation, pagination, SIP selection, prior-day cutoff and authentication errors.');
+
