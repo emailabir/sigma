@@ -1,9 +1,15 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import ts from 'typescript';
-const compiled=ts.transpileModule(fs.readFileSync('lib/strategy.ts','utf8'),{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText;
+const rulesCompiled=ts.transpileModule(fs.readFileSync('lib/rules.ts','utf8'),{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText;
+const rulesUrl='data:text/javascript;base64,'+Buffer.from(rulesCompiled).toString('base64');
+const {parseRules,requiredBars,ruleLabels}=await import(rulesUrl);
+const rulesMarkdown=fs.readFileSync('public/RULES.md','utf8');
+const rules=parseRules(rulesMarkdown);
+const compiled=ts.transpileModule(fs.readFileSync('lib/strategy.ts','utf8').replace("from './rules'",`from '${rulesUrl}'`),{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText;
 const strategyUrl='data:text/javascript;base64,'+Buffer.from(compiled).toString('base64');
-const {analyze,cleanBars}=await import(strategyUrl);
+const {analyze:analyzeWithRules,cleanBars}=await import(strategyUrl);
+const analyze=(bars,benchmark,time)=>analyzeWithRules(bars,benchmark,rules,time);
 const now=Date.parse('2026-09-09T12:00:00Z');
 const dates=[];for(let t=Date.parse('2026-09-08T04:00:00Z');dates.length<300;t-=86400000){if(![0,6].includes(new Date(t).getUTCDay()))dates.unshift(new Date(t).toISOString());}
 const make=(fn,range=2)=>dates.map((t,i)=>{const c=fn(i);return {t,o:c,h:c+range,l:c-range,c,v:1000000}});
@@ -21,7 +27,7 @@ assert.equal(analyze(b,spy,now+7*86400000).status,'Stale data');
 assert.equal(analyze(b.slice(0,-1),spy,now).status,'Stale data');
 assert.equal(analyze(b.filter((_,i)=>i!==250),spy,now).status,'Insufficient data');
 const lowVol=structuredClone(b);lowVol.at(-1).v=1000000;assert.equal(analyze(lowVol,spy,now).status,'Watch');assert.equal(analyze(lowVol,spy,now).entry,undefined);
-const flat=make(()=>100);const f=analyze(flat,spy,now);assert.equal(f.rsi,50);assert.ok(Math.abs(f.atr-4)<1e-10);assert.equal(f.sma50,100);assert.equal(f.sma200,100);assert.ok(Math.abs(f.ema-100)<1e-10);assert.equal(f.status,'Not qualified');
+const flat=make(()=>100);const f=analyze(flat,spy,now);assert.equal(f.rsi,50);assert.ok(Math.abs(f.atr-4)<1e-10);assert.equal(f.smaFast,100);assert.equal(f.smaSlow,100);assert.ok(Math.abs(f.ema-100)<1e-10);assert.equal(f.status,'Not qualified');
 const invalid=structuredClone(b);invalid[5].h=0;assert.equal(cleanBars([...invalid,invalid[6]]).length,299);
 let source=fs.readFileSync('app/api/bars/route.ts','utf8').replace("import universe from '@/lib/universe.json';",'const universe='+fs.readFileSync('lib/universe.json','utf8')+';').replace("from '@/lib/strategy'",`from '${strategyUrl}'`);
 const route=await import('data:text/javascript;base64,'+Buffer.from(ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText).toString('base64'));
@@ -35,3 +41,25 @@ const response=await route.POST(req({key:'123456',secret:'123456',symbols:['AAPL
 globalThis.fetch=async()=>new Response('',{status:401});const denied=await route.POST(req({key:'123456',secret:'123456',symbols:['AAPL']}));assert.equal(denied.status,502);assert.match((await denied.json()).error,/credentials/);globalThis.fetch=nativeFetch;
 console.log('PASS: indicator values, qualified/watch/rejected setups, entry risk, missing/stale history, invalid bars, API validation, pagination, SIP selection, prior-day cutoff and authentication errors.');
 
+
+const md=(r)=>'# Custom rules\n\n```json\n'+JSON.stringify(r,null,2)+'\n```\n';
+assert.equal(requiredBars(rules),201);
+assert.deepEqual(parseRules(rulesMarkdown.replaceAll('\n','\r\n')),rules);
+assert.throws(()=>parseRules('# Missing config'),/exactly one/);
+assert.throws(()=>parseRules(rulesMarkdown+'\n'+md(rules)),/exactly one/);
+assert.throws(()=>parseRules('```json\n{ invalid }\n```'),/invalid/);
+assert.throws(()=>parseRules(md({...rules,volume_min:'2'})),/volume_min/);
+assert.throws(()=>parseRules(md({...rules,sma_fast:200})),/smaller/);
+assert.throws(()=>parseRules(md({...rules,rsi_min:80,rsi_max:70})),/rsi_min/);
+assert.throws(()=>parseRules(md({...rules,enabled_checks:[]})),/enabled_checks/);
+assert.throws(()=>parseRules(md({...rules,enabled_checks:['unknown']})),/enabled_checks/);
+assert.throws(()=>parseRules(md({...rules,sma_slow:251})),/sma_slow/);
+assert.throws(()=>parseRules(md({...rules,misspelled_rule:10})),/Unknown/);
+assert.throws(()=>parseRules(md({...rules,stop_atr:0})),/stop_atr/);
+const missing={...rules};delete missing.atr_period;assert.throws(()=>parseRules(md(missing)),/atr_period/);
+const strict=parseRules(md({...rules,volume_min:2.1}));const tightened=analyzeWithRules(b,spy,strict,now);assert.equal(tightened.status,'Watch');assert.equal(tightened.entry,undefined);assert.match(tightened.checks[2].label,/2.1/);
+const noVolume=parseRules(md({...strict,enabled_checks:rules.enabled_checks.filter(x=>x!=='volume')}));const unfiltered=analyzeWithRules(b,spy,noVolume,now);assert.equal(unfiltered.status,'Qualified');assert.equal(unfiltered.checks.length,6);
+const riskRules=parseRules(md({...rules,entry_buffer_atr:.5,stop_atr:3,target_atr:9}));const risk=analyzeWithRules(b,spy,riskRules,now);assert.ok(risk.entry>s.entry);assert.ok(risk.stop<s.stop);assert.ok(risk.target>s.target);assert.ok(Math.abs((risk.target-risk.entry)/(risk.entry-risk.stop)-3)<.01);
+const periods=parseRules(md({...rules,sma_fast:10,sma_slow:30,breakout_period:10,volume_period:10,rsi_period:7,atr_period:21,ema_period:9,relative_strength_period:21,market_sma_period:30}));const dynamic=analyzeWithRules(flat,spy,periods,now);assert.equal(requiredBars(periods),31);assert.equal(dynamic.smaFast,100);assert.equal(dynamic.smaSlow,100);assert.equal(dynamic.rsi,50);assert.ok(Math.abs(dynamic.atr-4)<1e-10);assert.match(ruleLabels(periods).rsi,/RSI \(7\)/);assert.equal(analyzeWithRules(b.slice(-40),spy.slice(-40),periods,now).checks.length,7);
+const invalidStop=parseRules(md({...rules,stop_atr:100}));assert.equal(analyzeWithRules(b,spy,invalidStop,now).status,'Not qualified');assert.equal(analyzeWithRules(b,spy,invalidStop,now).entry,undefined);
+console.log('PASS: Markdown parsing, schema validation, external threshold changes, disabled checks, custom periods, dynamic labels and risk settings.');

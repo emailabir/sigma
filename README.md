@@ -19,3 +19,9 @@ Requires Node >=22.13. Run npm install, npm run dev, npm run build. Run node tes
 Validation: strategy fixtures, data-quality rejection, pagination and credential errors passed; live Alpaca scan requires user credentials and has not been verified. Optional WebMCP inspect tool is feature-detected; a supported WebMCP validation context was not available. Browser UI testing was not requested.
 
 Sources: https://github.com/datasets/s-and-p-500-companies and https://docs.alpaca.markets/us/docs/market-data-faq
+
+## Editable Markdown rules
+
+`public/RULES.md` is the single published default configuration. The browser fetches and validates it before enabling a scan; there is no hardcoded strategy-default fallback. Open Rules & Markdown to download the active file, load an externally edited .md file, or restore the published default. Imports are local to the browser, replace active rules only after validation, and recalculate existing bars immediately. Custom rules are session-only; reload restores the published file. Edit public/RULES.md and republish to change the default for all sessions. Markdown prose is documentation; the single JSON block controls supported settings. New indicator formulas still require code.
+
+The strategy, checklist, status counters, market card, table headings and risk-plan explanations use the same parsed configuration. Required history adjusts to the largest configured lookback. Tests cover malformed/missing/unknown settings, period limits, check toggles, threshold-driven qualification and modified risk plans, in addition to the original data and indicator checks.
