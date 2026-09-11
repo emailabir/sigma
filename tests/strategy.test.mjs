@@ -36,6 +36,9 @@ const allStocks=[...sp500,...nasdaq100];
 let source=fs.readFileSync('app/api/bars/route.ts','utf8').replace("import {allStocks} from '@/lib/universes';",'const allStocks='+JSON.stringify(allStocks)+';').replace("from '@/lib/strategy'",`from '${strategyUrl}'`);
 const route=await import('data:text/javascript;base64,'+Buffer.from(ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText).toString('base64'));
 const req=body=>new Request('https://screener.test/api/bars',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+const savedKey=process.env.ALPACA_API_KEY_ID,savedSecret=process.env.ALPACA_API_SECRET_KEY;
+delete process.env.ALPACA_API_KEY_ID;delete process.env.ALPACA_API_SECRET_KEY;
+assert.deepEqual(await (await route.GET()).json(),{serverConfigured:false});
 assert.equal((await route.POST(req({}))).status,400);
 assert.equal((await route.POST(req({key:'123456',secret:'123456',symbols:['NOT-IN-SP500']}))).status,400);
 assert.equal((await route.POST(new Request('https://screener.test/api/bars',{method:'POST',headers:{origin:'https://other.test'},body:'{}'}))).status,403);
@@ -47,6 +50,30 @@ globalThis.fetch=async()=>Response.json({bars:{[nasdaqOnly.symbol]:b},next_page_
 const nasdaqResponse=await route.POST(req({key:'123456',secret:'123456',symbols:[nasdaqOnly.symbol]}));assert.equal(nasdaqResponse.status,200);assert.equal((await nasdaqResponse.json()).bars[nasdaqOnly.symbol].length,300);
 globalThis.fetch=async()=>new Response('',{status:401});const denied=await route.POST(req({key:'123456',secret:'123456',symbols:['AAPL']}));assert.equal(denied.status,502);assert.match((await denied.json()).error,/credentials/);globalThis.fetch=nativeFetch;
 console.log('PASS: indicator values, qualified/watch/rejected setups, entry risk, missing/stale history, invalid bars, API validation, pagination, SIP selection, prior-day cutoff and authentication errors.');
+
+try{
+ process.env.ALPACA_API_KEY_ID='test-server-key';
+ assert.deepEqual(await (await route.GET()).json(),{serverConfigured:false});
+ process.env.ALPACA_API_SECRET_KEY='test-server-secret';
+ const configured=await route.GET();assert.equal(configured.headers.get('Cache-Control'),'no-store');
+ assert.deepEqual(await configured.json(),{serverConfigured:true});
+ globalThis.fetch=async(url,options)=>{
+  assert.equal(options.headers['APCA-API-KEY-ID'],'test-server-key');
+  assert.equal(options.headers['APCA-API-SECRET-KEY'],'test-server-secret');
+  return Response.json({bars:{AAPL:b},next_page_token:null});
+ };
+ for(const body of [{symbols:['AAPL']},{symbols:['AAPL'],key:'client-key',secret:'client-secret'}]){
+  const response=await route.POST(req(body));assert.equal(response.status,200);
+  const payload=await response.text();assert.ok(!payload.includes('test-server-'));assert.equal(JSON.parse(payload).bars.AAPL.length,300);
+ }
+ assert.equal((await route.POST(req({symbols:['NOT-IN-INDEX']}))).status,400);
+ assert.equal((await route.POST(new Request('https://screener.test/api/bars',{method:'POST',headers:{origin:'https://other.test'},body:JSON.stringify({symbols:['AAPL']})}))).status,403);
+}finally{
+ globalThis.fetch=nativeFetch;
+ if(savedKey===undefined)delete process.env.ALPACA_API_KEY_ID;else process.env.ALPACA_API_KEY_ID=savedKey;
+ if(savedSecret===undefined)delete process.env.ALPACA_API_SECRET_KEY;else process.env.ALPACA_API_SECRET_KEY=savedSecret;
+}
+console.log('PASS: server credential detection, incomplete configuration, server precedence, credential-free browser requests and no secret disclosure.');
 
 
 const md=(r)=>'# Custom rules\n\n```json\n'+JSON.stringify(r,null,2)+'\n```\n';

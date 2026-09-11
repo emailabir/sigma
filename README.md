@@ -32,6 +32,22 @@ Choose an index above the stock table, then run a scan. Switching indices clears
 
 Nasdaq-100 source: https://en.wikipedia.org/wiki/List_of_NASDAQ-100_companies (Wikipedia contributors, CC BY-SA 4.0). Names, tickers and ICB industries were extracted into lib/nasdaq100.json. This is a community-maintained snapshot, not an official live membership feed.
 
-Sigma is hosted through Sites with custom, invitation-only access. Only the owner can currently access it; add specific viewer emails through Sites access settings. Each viewer supplies their own Alpaca keys per browser session. RULES.md contains no credentials.
+Sigma is hosted through Sites with custom, invitation-only access. Only the owner can currently access it; add specific viewer emails through Sites access settings. When server secrets are configured, allowed viewers use that server connection; otherwise each viewer supplies temporary Alpaca keys per browser session. RULES.md contains no credentials.
 
 Standalone free hosting is also possible on Cloudflare Workers within its free quotas; this app needs its server route as well as static assets. A separate Cloudflare account and deployment setup are required. See https://developers.cloudflare.com/workers/platform/pricing/ for current limits. Sites plan eligibility and billing are separate; this repository does not establish a Sites free-tier guarantee.
+
+## Permanent data connection
+
+Sigma reads `ALPACA_API_KEY_ID` and `ALPACA_API_SECRET_KEY` from the server environment on each request. Configure both as **secret** runtime values on the existing Sites project, then redeploy to apply them. The browser receives only a configured/not-configured flag. It sends only symbols when the server connection is active. Temporary per-tab credentials remain available when server secrets are absent.
+
+For local development, copy `.env.example` to `.env.local`, enter the two values in your editor, and restart the development server. Both `.env.local` and Cloudflare `.dev.vars` files are ignored by Git. Never put credentials in RULES.md, Git, browser storage, or variables prefixed with NEXT_PUBLIC_ or VITE_.
+
+Keep the hosted app invitation-only when using a shared server connection. Authorized viewers' scans use the configured account's market-data quota. No trading endpoints are called. Shared data use remains subject to the provider's permissions.
+
+## GitHub Secrets
+
+In your private GitHub repository, open **Settings → Secrets and variables → Actions → New repository secret**. Add `ALPACA_API_KEY_ID` and `ALPACA_API_SECRET_KEY` once, using the same names as above. Do not paste values into an issue, commit, or workflow YAML.
+
+GitHub Actions secrets are available to workflow jobs, not directly to the running website. Storing them there alone does not configure Sites. For the current Sites deployment, also configure the two runtime secrets through Sites and redeploy. No GitHub-to-Sites secret synchronization is currently installed. A future deployment workflow must transfer secrets through a supported host API without embedding them in client bundles or build artifacts.
+
+Reference: https://docs.github.com/en/actions/how-tos/write-workflows/choose-what-workflows-do/use-secrets
