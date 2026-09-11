@@ -1,0 +1,13 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "sigma",
+  "account_id": "c1824afd0aa3057d7540f3355cb262ed",
+  "main": "worker.ts",
+  "compatibility_date": "2026-09-11",
+  "compatibility_flags": ["nodejs_compat", "nodejs_compat_populate_process_env"],
+  "workers_dev": true,
+  "preview_urls": false,
+  "assets": {"directory": "./public", "binding": "ASSETS", "run_worker_first": true},
+  "vars": {"CF_ACCESS_TEAM_DOMAIN": "", "CF_ACCESS_AUD": ""},
+  "d1_databases": [{"binding":"SIGMA_DB","database_name":"sigma-db","database_id":"162bc512-523a-4c5b-9bb9-f3e8ce8e12fd","migrations_dir":"migrations"}]
+}

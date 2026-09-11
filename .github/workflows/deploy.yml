@@ -1,0 +1,39 @@
+name: Deploy Sigma to Cloudflare
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: sigma-production
+  cancel-in-progress: false
+jobs:
+  deploy:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: npm test
+      - run: npm run typecheck
+      - run: npm run build
+      # Secrets are provided only to the deployment step, never the client build.
+      - name: Apply schema, deploy, and configure runtime secrets
+        uses: cloudflare/wrangler-action@ebbaa1584979971c8614a24965b4405ff95890e0 # v4
+        with:
+          apiToken: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          accountId: c1824afd0aa3057d7540f3355cb262ed
+          wranglerVersion: '4.92.0'
+          preCommands: npm run db:migrate
+          command: deploy --config dist/server/wrangler.json
+          secrets: |
+            ALPACA_API_KEY_ID
+            ALPACA_API_SECRET_KEY
+        env:
+          ALPACA_API_KEY_ID: ${{ secrets.ALPACA_API_KEY_ID }}
+          ALPACA_API_SECRET_KEY: ${{ secrets.ALPACA_API_SECRET_KEY }}
+          WRANGLER_WRITE_LOGS: 'false'

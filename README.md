@@ -1,53 +1,65 @@
 # Sigma
 
-Daily breakout screener with an S&P 500 / Nasdaq-100 dropdown. S&P 500: 503 share classes from DataHub/datasets, retrieved 2026-09-09. Nasdaq-100: 102 securities from Wikipedia, retrieved 2026-09-10. Each list keeps its source classification (GICS sector or ICB industry). Membership is a dated snapshot, not point-in-time backtest data.
+A daily breakout screener with **Screener · Saved scans · Watchlist**, an S&P 500 / Nasdaq-100 selector, and externally editable Markdown rules. UI and backend run together on Cloudflare Workers. Cloudflare D1 stores saved data; Cloudflare Access supplies verified, invitation-only identities.
 
-## Data connection
+## Workspace
 
-Create an Alpaca account and generate paper-account API keys. Use Connect data in the app. Keys are kept only in browser memory and sent to the same-origin backend for historical SIP requests. No credentials are stored or logged by application code. The backend sends no trading requests. Account and market-data eligibility are controlled by Alpaca. Scan end excludes the current New York day; bars are split-adjusted. The app processes 20 constituents per request and handles pagination. Reloading clears data and keys.
+- **Screener:** run the selected index, filter for Qualified, inspect each check and illustrative entry plan. Star any stock to add it to your watchlist.
+- **Saved scans:** results save automatically with their constituent list, market date and actual rules Markdown. Retention is 30 completed scans plus 5 partial scans per user, across both indices. A failed save remains available for retry in the current tab.
+- **Changes:** completed scans compare with the nearest earlier market date having identical strategy settings, formula version and index membership. Newly / still / no longer qualified exclude unavailable data. Partial scans and same-day reruns are excluded from comparison baselines.
+- **Watchlist:** stars and notes sync between devices. Status comes from that user's latest completed saved scan containing the stock; its date and rules name are shown. It is not a live quote or new scan.
 
-## Strategy
+Every database operation is scoped to the signed Access user ID. Client-supplied user IDs and unsigned email headers cannot select someone else's data. Snapshots contain closing-price charts, not full raw OHLCV history or credentials. Historical plans are labeled. Removing access blocks new requests; it does not erase stored data.
 
-All seven conditions must pass: close > SMA50 > SMA200; close > prior 20-session high; volume >= 1.5 times the prior 20-session average; Wilder RSI14 in [50,70]; close <= EMA20 + Wilder ATR14; 63-session return greater than SPY; SPY close > SMA200. At least 201 matching sessions are required; invalid, missing and stale bars withhold plans. EMA20 uses an SMA seed. ATR14 uses true ranges starting with the second bar and Wilder smoothing.
+## Market data and editable rules
 
-Entry: signal-day high + 0.1 ATR rounded up to a cent. Stop: entry - 2 ATR rounded down. Illustrative target: entry + 4 ATR rounded up. This is an unvalidated strategy hypothesis, not a profitability claim. No earnings feed, live execution, or historical membership backtester is included. Daily bars may include extended-hours trades per provider aggregation; use a current broker quote for entry decisions.
+Set runtime secrets `ALPACA_API_KEY_ID` and `ALPACA_API_SECRET_KEY` once. Invited users can then scan without entering keys after refresh. The browser receives only a configured/not-configured flag. Temporary per-tab credentials remain supported when server secrets are absent and are never saved with a scan. No trading endpoints are called.
 
-## Development
+Historical SIP requests exclude the current New York day; bars are split-adjusted, batched by 20 constituents, and paginated. Account eligibility, data access and sharing permissions depend on Alpaca. Invited users share the account's data quota. Reloading clears working results; saved scans and watchlists persist.
 
-Requires Node >=22.13. Run npm install, npm run dev, npm run build. Run node tests/strategy.test.mjs for deterministic strategy and mocked provider contract checks; npx tsc --noEmit for type checking.
+The default `public/RULES.md` is validated before enabling scans. Its single JSON block controls supported periods, thresholds, enabled checks, entry buffer, stop and target. Load an externally edited Markdown file through **Rules & Markdown**. Imports recalculate working results; saved scans retain their original rules. Active custom rules last for the tab session. To change everyone's default, edit `public/RULES.md` and deploy. New indicator formulas require code and a formula-version update in `lib/library.ts`.
 
-Validation: strategy fixtures, data-quality rejection, pagination and credential errors passed; live Alpaca scan requires user credentials and has not been verified. Optional WebMCP inspect tool is feature-detected; a supported WebMCP validation context was not available. Browser UI testing was not requested.
+Default checks: close > SMA50 > SMA200; close > prior 20-session high; volume >= 1.5 times prior 20-session average; Wilder RSI14 in [50,70]; close <= EMA20 + Wilder ATR14; 63-session return greater than SPY; SPY close > SMA200. All enabled conditions must pass. At least 201 matching sessions are required with defaults. Missing, invalid or stale data withholds plans. EMA uses an SMA seed; ATR uses true ranges from the second bar and Wilder smoothing.
 
-Sources: https://github.com/datasets/s-and-p-500-companies and https://docs.alpaca.markets/us/docs/market-data-faq
+Default illustrative entry: signal-day high + 0.1 ATR rounded up to a cent. Stop: entry - 2 ATR rounded down. Target: entry + 4 ATR rounded up. This is an unvalidated strategy hypothesis, not a profitability claim. No earnings feed, live execution or historical-membership backtester is included. Provider daily aggregation may include extended-hours trades.
 
-## Editable Markdown rules
+## Cloudflare setup
 
-`public/RULES.md` is the single published default configuration. The browser fetches and validates it before enabling a scan; there is no hardcoded strategy-default fallback. Open Rules & Markdown to download the active file, load an externally edited .md file, or restore the published default. Imports are local to the browser, replace active rules only after validation, and recalculate existing bars immediately. Custom rules are session-only; reload restores the published file. Edit public/RULES.md and republish to change the default for all sessions. Markdown prose is documentation; the single JSON block controls supported settings. New indicator formulas still require code.
+Use Node **24**. Committed account/database IDs are public configuration, not credentials; forks must use their own resources.
 
-The strategy, checklist, status counters, market card, table headings and risk-plan explanations use the same parsed configuration. Required history adjusts to the largest configured lookback. Tests cover malformed/missing/unknown settings, period limits, check toggles, threshold-driven qualification and modified risk plans, in addition to the original data and indicator checks.
+1. Run `npm ci` and `npx wrangler login`.
+2. Create D1 and put its ID under `SIGMA_DB` in `wrangler.jsonc`. In the original Sigma account, `sigma-db` already exists; do not recreate it. Run `npm run db:migrate`.
+3. Configure a Cloudflare Access self-hosted application for the production Worker hostname. Allow only invited email addresses, starting with the owner. Use email one-time PIN or a configured identity provider. Do not add Everyone or Bypass policies. Complete any account activation yourself and review billing terms.
+4. Set `CF_ACCESS_TEAM_DOMAIN` (`https://your-team.cloudflareaccess.com`) and `CF_ACCESS_AUD` (Application Audience tag) in `wrangler.jsonc`. These are not secrets. Blank settings deny all requests with 503; missing/invalid signed tokens return 401. Access must also protect the hostname so users reach login. Preview URLs are disabled. The Worker verifies Access before serving app routes and assets.
+5. Run `npm test`, `npm run typecheck`, `npm run build`, then `npm run deploy`. Deployment uses generated `dist/server/wrangler.json`.
+6. Configure Alpaca runtime secrets using GitHub below, or interactive `npx wrangler secret put ALPACA_API_KEY_ID` and `npx wrangler secret put ALPACA_API_SECRET_KEY`. Never put values in command arguments, source, RULES.md, browser storage, or `NEXT_PUBLIC_` / `VITE_` variables.
 
-## Index selection and sharing
+UI, API and Access validation run on Workers; saved scans and notes live in D1. Free quotas are finite: see [Workers pricing](https://developers.cloudflare.com/workers/platform/pricing/) and [D1 pricing](https://developers.cloudflare.com/d1/platform/pricing/). Retention is per user, not a guarantee that any number of users fits the free database allowance.
 
-Choose an index above the stock table, then run a scan. Switching indices clears results and filters; the selector is disabled during scans. The same editable rules and SPY benchmark apply to both indices. The backend accepts the union of both snapshots plus SPY. Some recent listings may have insufficient history and receive no plan.
+The previous Sites deployment is separate. `.openai/hosting.json` retains its provenance; this build targets the user's Cloudflare account. Deploying here does not update the old `chatgpt.site` hostname or migrate its access settings.
 
-Nasdaq-100 source: https://en.wikipedia.org/wiki/List_of_NASDAQ-100_companies (Wikipedia contributors, CC BY-SA 4.0). Names, tickers and ICB industries were extracted into lib/nasdaq100.json. This is a community-maintained snapshot, not an official live membership feed.
+## GitHub deployment
 
-Sigma is hosted through Sites with custom, invitation-only access. Only the owner can currently access it; add specific viewer emails through Sites access settings. When server secrets are configured, allowed viewers use that server connection; otherwise each viewer supplies temporary Alpaca keys per browser session. RULES.md contains no credentials.
+In `emailabir/sigma` → **Settings → Secrets and variables → Actions**, keep:
 
-Standalone free hosting is also possible on Cloudflare Workers within its free quotas; this app needs its server route as well as static assets. A separate Cloudflare account and deployment setup are required. See https://developers.cloudflare.com/workers/platform/pricing/ for current limits. Sites plan eligibility and billing are separate; this repository does not establish a Sites free-tier guarantee.
+- `ALPACA_API_KEY_ID`
+- `ALPACA_API_SECRET_KEY`
+- `CLOUDFLARE_API_TOKEN`: a token scoped to the Sigma account with Account → Workers Scripts → Edit and Account → D1 → Edit. Use an appropriate limited lifetime.
 
-## Permanent data connection
+Run **Actions → Deploy Sigma to Cloudflare → Run workflow** on `main`. It tests and builds without application credentials, then applies migrations, deploys and transfers the two existing Alpaca secrets directly to Worker runtime. Secrets never go into the public repository, client bundle or a downloadable artifact. Only trusted maintainers should modify/run deployment workflows.
 
-Sigma reads `ALPACA_API_KEY_ID` and `ALPACA_API_SECRET_KEY` from the server environment on each request. Configure both as **secret** runtime values on the existing Sites project, then redeploy to apply them. The browser receives only a configured/not-configured flag. It sends only symbols when the server connection is active. Temporary per-tab credentials remain available when server secrets are absent.
+Checks run on pushes and pull requests without deployment secrets. Deployment is manual. Missing `CLOUDFLARE_API_TOKEN` prevents GitHub deployment; local Wrangler login does not grant GitHub permission.
 
-For local development, copy `.env.example` to `.env.local`, enter the two values in your editor, and restart the development server. Both `.env.local` and Cloudflare `.dev.vars` files are ignored by Git. Never put credentials in RULES.md, Git, browser storage, or variables prefixed with NEXT_PUBLIC_ or VITE_.
+## Development and validation
 
-Keep the hosted app invitation-only when using a shared server connection. Authorized viewers' scans use the configured account's market-data quota. No trading endpoints are called. Shared data use remains subject to the provider's permissions.
+`npm run dev` starts development; `npm run build` produces the Worker and assets. Access stays enabled in development. Full authenticated testing needs a development hostname protected by Access with matching issuer/audience; localhost without a signed token is deliberately denied. Pure strategy and storage tests need no production credentials. Ignored `.dev.vars` may hold local server secrets; never commit it.
 
-## GitHub Secrets
+`npm test` covers strategy math, rules, provider contracts, actual SQLite schema/retention, immutable retries, user isolation, notes, dotted ticker symbols, comparisons and signed Access token rejection. Library tests use Node 24 SQLite and ephemeral signing keys. `npm run typecheck` checks application types.
 
-In your private GitHub repository, open **Settings → Secrets and variables → Actions → New repository secret**. Add `ALPACA_API_KEY_ID` and `ALPACA_API_SECRET_KEY` once, using the same names as above. Do not paste values into an issue, commit, or workflow YAML.
+## Sources
 
-GitHub Actions secrets are available to workflow jobs, not directly to the running website. Storing them there alone does not configure Sites. For the current Sites deployment, also configure the two runtime secrets through Sites and redeploy. No GitHub-to-Sites secret synchronization is currently installed. A future deployment workflow must transfer secrets through a supported host API without embedding them in client bundles or build artifacts.
+Membership is a dated snapshot, not point-in-time backtest data:
 
-Reference: https://docs.github.com/en/actions/how-tos/write-workflows/choose-what-workflows-do/use-secrets
+- S&P 500: 503 share classes from [DataHub/datasets](https://github.com/datasets/s-and-p-500-companies), retrieved 2026-09-09; GICS sectors.
+- Nasdaq-100: 102 securities from [Wikipedia contributors](https://en.wikipedia.org/wiki/List_of_NASDAQ-100_companies), retrieved 2026-09-10; ICB industries, extracted into `lib/nasdaq100.json`, CC BY-SA 4.0. A community-maintained snapshot, not an official live membership feed.
+- [Alpaca market data FAQ](https://docs.alpaca.markets/us/docs/market-data-faq).
