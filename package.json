@@ -11,7 +11,7 @@
     "start": "wrangler dev --config dist/server/wrangler.json",
     "lint": "oxlint",
     "format": "oxfmt",
-    "test": "node tests/strategy.test.mjs && node tests/library.test.mjs",
+    "test": "node tests/strategy.test.mjs && node tests/library.test.mjs && node tests/auth.test.mjs",
     "typecheck": "tsc --noEmit",
     "deploy": "wrangler deploy --config dist/server/wrangler.json",
     "db:migrate": "wrangler d1 migrations apply sigma-db --remote --config wrangler.jsonc"

@@ -33,7 +33,11 @@ jobs:
           secrets: |
             ALPACA_API_KEY_ID
             ALPACA_API_SECRET_KEY
+            SIGMA_GITHUB_CLIENT_ID
+            SIGMA_GITHUB_CLIENT_SECRET
         env:
           ALPACA_API_KEY_ID: ${{ secrets.ALPACA_API_KEY_ID }}
           ALPACA_API_SECRET_KEY: ${{ secrets.ALPACA_API_SECRET_KEY }}
+          SIGMA_GITHUB_CLIENT_ID: ${{ secrets.SIGMA_GITHUB_CLIENT_ID }}
+          SIGMA_GITHUB_CLIENT_SECRET: ${{ secrets.SIGMA_GITHUB_CLIENT_SECRET }}
           WRANGLER_WRITE_LOGS: 'false'

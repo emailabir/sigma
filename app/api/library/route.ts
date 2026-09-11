@@ -7,7 +7,7 @@ const uuid=(v:unknown):v is string=>typeof v==='string'&&/^[a-f0-9]{8}-[a-f0-9]{
 export async function GET(request:Request){try{
  const {user,db}=await context(request),store=new LibraryStore(db,user.id),id=new URL(request.url).searchParams.get('id');
  if(id){if(!uuid(id))throw new HttpError(400,'Invalid scan ID.');const scan=await store.get(id);if(!scan)throw new HttpError(404,'Scan not found.');return json({scan});}
- const [scans,watchlist]=await Promise.all([store.list(),store.watchlist()]);return json({scans,watchlist,email:user.email});
+ const [scans,watchlist]=await Promise.all([store.list(),store.watchlist()]);return json({scans,watchlist,account:user.name});
  }catch(error){return failure(error);}}
 export async function POST(request:Request){try{
  sameOrigin(request);const {user,db}=await context(request),store=new LibraryStore(db,user.id);

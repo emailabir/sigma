@@ -8,6 +8,6 @@
   "workers_dev": true,
   "preview_urls": false,
   "assets": {"directory": "./public", "binding": "ASSETS", "run_worker_first": true},
-  "vars": {"CF_ACCESS_TEAM_DOMAIN": "", "CF_ACCESS_AUD": ""},
+  "vars": {"SIGMA_AUTH_ORIGIN": "https://sigma.emailabir.workers.dev", "SIGMA_GITHUB_USER_IDS": "43187933"},
   "d1_databases": [{"binding":"SIGMA_DB","database_name":"sigma-db","database_id":"162bc512-523a-4c5b-9bb9-f3e8ce8e12fd","migrations_dir":"migrations"}]
 }

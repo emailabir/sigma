@@ -9,7 +9,7 @@ export async function libraryRequest<T>(path='/api/library',body?:unknown):Promi
 }
 export function useLibrary(){
  const client=useQueryClient();
- const query=useQuery({queryKey:['library'],queryFn:()=>libraryRequest<{scans:ScanSummary[];watchlist:WatchItem[];email:string}>(),retry:false});
+ const query=useQuery({queryKey:['library'],queryFn:()=>libraryRequest<{scans:ScanSummary[];watchlist:WatchItem[];account:string}>(),retry:false});
  const mutation=useMutation({mutationFn:(body:unknown)=>libraryRequest('/api/library',body),onSuccess:()=>client.invalidateQueries({queryKey:['library']})});
  return {...query,scans:query.data?.scans??[],watchlist:query.data?.watchlist??[],mutate:mutation.mutateAsync,mutating:mutation.isPending,mutationError:mutation.error,refresh:()=>client.invalidateQueries({queryKey:['library']})};
 }
