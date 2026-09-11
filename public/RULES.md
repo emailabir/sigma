@@ -1,6 +1,6 @@
-# SwingScope screening rules
+# Sigma screening rules
 
-This file controls the screener. Edit the values in the single JSON block below using any text editor, save this file, then open **Rules → Load .md file** in SwingScope. Valid changes immediately recalculate the loaded stock history; a new market-data scan is not required. The app shows the active file and rule name.
+This file controls the screener. Edit the values in the single JSON block below using any text editor, save this file, then open **Rules → Load .md file** in Sigma. Valid changes immediately recalculate the loaded stock history; a new market-data scan is not required. The app shows the active file and rule name.
 
 Imported rules stay in this browser tab's memory. Reloading restores the published default. To change the default for every session, replace `public/RULES.md` in the app source and republish. A hosted browser cannot automatically watch files on your computer; load the file again after each external edit.
 
@@ -11,7 +11,7 @@ Only the JSON block is executable configuration. Prose is documentation, not exe
 ```json
 {
   "schema_version": 1,
-  "name": "S&P 500 daily breakout v1",
+  "name": "Sigma daily breakout v1",
   "enabled_checks": ["trend", "breakout", "volume", "rsi", "extension", "relative_strength", "market"],
   "sma_fast": 50,
   "sma_slow": 200,
@@ -66,3 +66,7 @@ Periods must be integers from 2 to 250. RSI bounds must be 0–100 with minimum 
 ## Example edits
 
 For stronger volume confirmation, change `volume_min` from `1.5` to `2`. For a wider stop, change `stop_atr` from `2` to `2.5`. Set `target_atr` to `5` to retain approximately 2:1 planned reward/risk with that stop. These are examples of configuration changes, not validated trading recommendations.
+
+## Index selection
+
+The same configuration applies to S&P 500 and Nasdaq-100. Both use SPY for the market and relative-strength checks. Changing the index clears prior scan results; run a new scan for that index. Membership is a dated, manually maintained snapshot.

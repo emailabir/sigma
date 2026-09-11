@@ -34,7 +34,7 @@ const localBindingConfig = {
     : [],
 };
 
-export default defineConfig(async () => {
+export default defineConfig(async ({ command }) => {
   // Keep Wrangler and Miniflare state project-local. These are non-secret tool
   // settings; application environment belongs in ignored `.env*` files.
   process.env.WRANGLER_WRITE_LOGS ??= 'false';
@@ -43,16 +43,31 @@ export default defineConfig(async () => {
 
   // Wrangler snapshots its log path while the Cloudflare plugin is imported.
   const { cloudflare } = await import('@cloudflare/vite-plugin');
+  // This app uses HTTP APIs and no Worker bindings. Use the native Node dev
+  // runner on Windows, where the local Worker runner can stall requests.
+  const useWorkerRuntime = command === 'build' || process.platform !== 'win32' || Boolean(d1 || r2);
 
   return {
     css: { postcss: { plugins: [tailwindcss()] } },
-    server: isCodexSeatbeltSandbox
-      ? { watch: { useFsEvents: false, usePolling: true } }
-      : undefined,
+    environments: {
+      ssr: {
+        optimizeDeps: {
+          include: ['lucide-react', '@base-ui/react/dialog', '@base-ui/react/select', '@base-ui/react/button'],
+        },
+      },
+    },
+    server: {
+      // Vite 8.0.13 can recursively forward its own WebSocket failures after
+      // a server disconnect. Keep errors in the browser console/overlay.
+      forwardConsole: false,
+      ...(isCodexSeatbeltSandbox
+        ? { watch: { useFsEvents: false, usePolling: true } }
+        : {}),
+    },
     plugins: [
       vinext(),
       sites(),
-      cloudflare({
+      useWorkerRuntime && cloudflare({
         viteEnvironment: { name: 'rsc', childEnvironments: ['ssr'] },
         config: localBindingConfig,
       }),

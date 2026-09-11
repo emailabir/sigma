@@ -29,7 +29,11 @@ assert.equal(analyze(b.filter((_,i)=>i!==250),spy,now).status,'Insufficient data
 const lowVol=structuredClone(b);lowVol.at(-1).v=1000000;assert.equal(analyze(lowVol,spy,now).status,'Watch');assert.equal(analyze(lowVol,spy,now).entry,undefined);
 const flat=make(()=>100);const f=analyze(flat,spy,now);assert.equal(f.rsi,50);assert.ok(Math.abs(f.atr-4)<1e-10);assert.equal(f.smaFast,100);assert.equal(f.smaSlow,100);assert.ok(Math.abs(f.ema-100)<1e-10);assert.equal(f.status,'Not qualified');
 const invalid=structuredClone(b);invalid[5].h=0;assert.equal(cleanBars([...invalid,invalid[6]]).length,299);
-let source=fs.readFileSync('app/api/bars/route.ts','utf8').replace("import universe from '@/lib/universe.json';",'const universe='+fs.readFileSync('lib/universe.json','utf8')+';').replace("from '@/lib/strategy'",`from '${strategyUrl}'`);
+const sp500=JSON.parse(fs.readFileSync('lib/universe.json','utf8'));
+const nasdaq100=JSON.parse(fs.readFileSync('lib/nasdaq100.json','utf8'));
+assert.equal(nasdaq100.length,102);assert.equal(new Set(nasdaq100.map(s=>s.symbol)).size,102);
+const allStocks=[...sp500,...nasdaq100];
+let source=fs.readFileSync('app/api/bars/route.ts','utf8').replace("import {allStocks} from '@/lib/universes';",'const allStocks='+JSON.stringify(allStocks)+';').replace("from '@/lib/strategy'",`from '${strategyUrl}'`);
 const route=await import('data:text/javascript;base64,'+Buffer.from(ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText).toString('base64'));
 const req=body=>new Request('https://screener.test/api/bars',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
 assert.equal((await route.POST(req({}))).status,400);
@@ -38,13 +42,16 @@ assert.equal((await route.POST(new Request('https://screener.test/api/bars',{met
 const nativeFetch=globalThis.fetch;let calls=0;
 globalThis.fetch=async(url,opts)=>{calls++;const u=new URL(url);assert.equal(u.origin,'https://data.alpaca.markets');assert.equal(u.searchParams.get('feed'),'sip');assert.equal(u.searchParams.get('adjustment'),'split');assert.ok(Date.parse(u.searchParams.get('end'))<Date.now()-15*60000);assert.equal(opts.headers['APCA-API-KEY-ID'],'123456');return Response.json({bars:{AAPL:calls===1?b.slice(0,150):b.slice(150)},next_page_token:calls===1?'page2':null})};
 const response=await route.POST(req({key:'123456',secret:'123456',symbols:['AAPL']}));assert.equal(response.status,200);assert.equal((await response.json()).bars.AAPL.length,300);assert.equal(calls,2);
+const nasdaqOnly=nasdaq100.find(s=>!sp500.some(p=>p.symbol===s.symbol));assert.ok(nasdaqOnly);
+globalThis.fetch=async()=>Response.json({bars:{[nasdaqOnly.symbol]:b},next_page_token:null});
+const nasdaqResponse=await route.POST(req({key:'123456',secret:'123456',symbols:[nasdaqOnly.symbol]}));assert.equal(nasdaqResponse.status,200);assert.equal((await nasdaqResponse.json()).bars[nasdaqOnly.symbol].length,300);
 globalThis.fetch=async()=>new Response('',{status:401});const denied=await route.POST(req({key:'123456',secret:'123456',symbols:['AAPL']}));assert.equal(denied.status,502);assert.match((await denied.json()).error,/credentials/);globalThis.fetch=nativeFetch;
 console.log('PASS: indicator values, qualified/watch/rejected setups, entry risk, missing/stale history, invalid bars, API validation, pagination, SIP selection, prior-day cutoff and authentication errors.');
 
 
 const md=(r)=>'# Custom rules\n\n```json\n'+JSON.stringify(r,null,2)+'\n```\n';
 assert.equal(requiredBars(rules),201);
-assert.deepEqual(parseRules(rulesMarkdown.replaceAll('\n','\r\n')),rules);
+assert.deepEqual(parseRules(rulesMarkdown.replace(/\r?\n/g,'\r\n')),rules);
 assert.throws(()=>parseRules('# Missing config'),/exactly one/);
 assert.throws(()=>parseRules(rulesMarkdown+'\n'+md(rules)),/exactly one/);
 assert.throws(()=>parseRules('```json\n{ invalid }\n```'),/invalid/);

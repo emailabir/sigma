@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: 'SwingScope · S&P 500 Screener', description: 'Daily S&P 500 breakout setups and transparent entry rules',
+  title: 'Sigma · S&P 500 Screener', description: 'Daily index stock screener with transparent, editable entry rules',
 };
 
 export default function RootLayout({

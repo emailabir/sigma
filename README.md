@@ -1,6 +1,6 @@
-# SwingScope
+# Sigma
 
-Personal S&P 500 daily breakout screener. Universe: 503 share classes from the public DataHub/datasets snapshot retrieved 2026-09-09. Membership is a dated snapshot, not point-in-time backtest data.
+Daily breakout screener with an S&P 500 / Nasdaq-100 dropdown. S&P 500: 503 share classes from DataHub/datasets, retrieved 2026-09-09. Nasdaq-100: 102 securities from Wikipedia, retrieved 2026-09-10. Each list keeps its source classification (GICS sector or ICB industry). Membership is a dated snapshot, not point-in-time backtest data.
 
 ## Data connection
 
@@ -25,3 +25,13 @@ Sources: https://github.com/datasets/s-and-p-500-companies and https://docs.alpa
 `public/RULES.md` is the single published default configuration. The browser fetches and validates it before enabling a scan; there is no hardcoded strategy-default fallback. Open Rules & Markdown to download the active file, load an externally edited .md file, or restore the published default. Imports are local to the browser, replace active rules only after validation, and recalculate existing bars immediately. Custom rules are session-only; reload restores the published file. Edit public/RULES.md and republish to change the default for all sessions. Markdown prose is documentation; the single JSON block controls supported settings. New indicator formulas still require code.
 
 The strategy, checklist, status counters, market card, table headings and risk-plan explanations use the same parsed configuration. Required history adjusts to the largest configured lookback. Tests cover malformed/missing/unknown settings, period limits, check toggles, threshold-driven qualification and modified risk plans, in addition to the original data and indicator checks.
+
+## Index selection and sharing
+
+Choose an index above the stock table, then run a scan. Switching indices clears results and filters; the selector is disabled during scans. The same editable rules and SPY benchmark apply to both indices. The backend accepts the union of both snapshots plus SPY. Some recent listings may have insufficient history and receive no plan.
+
+Nasdaq-100 source: https://en.wikipedia.org/wiki/List_of_NASDAQ-100_companies (Wikipedia contributors, CC BY-SA 4.0). Names, tickers and ICB industries were extracted into lib/nasdaq100.json. This is a community-maintained snapshot, not an official live membership feed.
+
+Sigma is hosted through Sites with custom, invitation-only access. Only the owner can currently access it; add specific viewer emails through Sites access settings. Each viewer supplies their own Alpaca keys per browser session. RULES.md contains no credentials.
+
+Standalone free hosting is also possible on Cloudflare Workers within its free quotas; this app needs its server route as well as static assets. A separate Cloudflare account and deployment setup are required. See https://developers.cloudflare.com/workers/platform/pricing/ for current limits. Sites plan eligibility and billing are separate; this repository does not establish a Sites free-tier guarantee.
