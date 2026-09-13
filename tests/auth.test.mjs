@@ -21,10 +21,12 @@ const post=(path,origin=config.SIGMA_AUTH_ORIGIN,cookies='')=>req(path,{method:'
 const next=async()=>new Response('protected');
 const cookiePair=(response,name)=>response.headers.getSetCookie().find(c=>c.startsWith(name+'='))?.split(';')[0];
 const nativeFetch=globalThis.fetch;let calls=0,profileId=43187933,providerFails=false,usedCodes=new Set();
+let redirectEndpoint='';
 let expectedChallenge='';
 globalThis.fetch=async(input,options)=>{
  calls++;
- assert.equal(options.redirect,'error');
+ assert.equal(options.redirect,'manual');
+ if(input===redirectEndpoint)return new Response(null,{status:302,headers:{Location:'https://untrusted.test'}});
  if(input==='https://github.com/login/oauth/access_token'){
   const body=new URLSearchParams(options.body),code=body.get('code');
   assert.equal(body.get('client_id'),config.SIGMA_GITHUB_CLIENT_ID);
@@ -68,6 +70,13 @@ try{
  assert.equal((await authGate(req('/'),config,next)).headers.get('location'),'/auth/login');
  assert.equal((await authGate(req('/api/library'),{},next)).status,503);
  assert.equal((await authRoute(new Request('https://evil.test/auth/start',{method:'POST',headers:{origin:'https://evil.test'}}),config)).status,403);
+ for(const endpoint of ['https://github.com/login/oauth/access_token','https://api.github.com/user']){
+  redirectEndpoint=endpoint;
+  const attempt=await start(),previousCalls=calls;
+  assert.equal((await authRoute(callback(attempt),config)).status,502);
+  assert.equal(calls-previousCalls,endpoint.endsWith('/access_token')?1:2,'Redirects must stop without forwarding credentials');
+ }
+ redirectEndpoint='';
  const flow=await start();const before=calls;
  assert.equal((await authRoute(callback({...flow,state:'wrong'}),config)).status,400);
  assert.equal((await authRoute(callback({...flow,cookie:flow.cookie+'bad'}),config)).status,400);

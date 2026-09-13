@@ -26,6 +26,7 @@ export async function authRoute(request:Request,config:AuthConfig):Promise<Respo
  const url=new URL(request.url);if(!url.pathname.startsWith('/auth/'))return null;
  if(url.origin!==authOrigin(config))return new Response('Use the Sigma application address.',{status:403,headers:privateHeaders()});
  const clearFlow=cookie(FLOW_COOKIE,'',0);
+ let stage='request';
  try{
   if(url.pathname==='/auth/login'&&request.method==='GET')return loginPage(config);
   if(url.pathname==='/auth/logout'){
@@ -48,18 +49,28 @@ export async function authRoute(request:Request,config:AuthConfig):Promise<Respo
    let payload;
    try{({payload}=await jwtDecrypt(flow,await flowKey(config),{issuer:authOrigin(config)!,audience:flowAudience,keyManagementAlgorithms:['dir'],contentEncryptionAlgorithms:['A256GCM'],requiredClaims:['iat','exp'],maxTokenAge:'10m'}));}catch{throw new HttpError(400,'Sign-in expired. Please try again.');}
    if(payload.state!==state||typeof payload.verifier!=='string'||!/^[A-Za-z0-9_-]{43}$/.test(payload.verifier))throw new HttpError(400,'Sign-in could not be verified. Please try again.');
-   const exchange=await fetch('https://github.com/login/oauth/access_token',{method:'POST',headers:{Accept:'application/json','Content-Type':'application/x-www-form-urlencoded'},body:new URLSearchParams({client_id:config.SIGMA_GITHUB_CLIENT_ID!,client_secret:config.SIGMA_GITHUB_CLIENT_SECRET!,code,redirect_uri:callback,code_verifier:payload.verifier}),signal:AbortSignal.timeout(15000),redirect:'error'});
+   stage='token exchange';
+   // Workers supports manual/follow only; never forward credentials on redirects.
+   const exchange=await fetch('https://github.com/login/oauth/access_token',{method:'POST',headers:{Accept:'application/json','Content-Type':'application/x-www-form-urlencoded','User-Agent':'Sigma-login'},body:new URLSearchParams({client_id:config.SIGMA_GITHUB_CLIENT_ID!,client_secret:config.SIGMA_GITHUB_CLIENT_SECRET!,code,redirect_uri:callback,code_verifier:payload.verifier}),signal:AbortSignal.timeout(15000),redirect:'manual'});
+   if(!exchange.ok)throw new HttpError(502,'GitHub sign-in is temporarily unavailable. Please try again.');
+   stage='token response';
    const token=await exchange.json() as {access_token?:unknown;token_type?:unknown};
    if(!exchange.ok||typeof token.access_token!=='string'||!token.access_token||String(token.token_type).toLowerCase()!=='bearer')throw new HttpError(400,'GitHub sign-in could not be completed. Please try again.');
-   const profile=await fetch('https://api.github.com/user',{headers:{Accept:'application/vnd.github+json',Authorization:'Bearer '+token.access_token,'User-Agent':'Sigma-login','X-GitHub-Api-Version':'2022-11-28'},signal:AbortSignal.timeout(15000),redirect:'error'});
+   stage='profile request';
+   const profile=await fetch('https://api.github.com/user',{headers:{Accept:'application/vnd.github+json',Authorization:'Bearer '+token.access_token,'User-Agent':'Sigma-login','X-GitHub-Api-Version':'2022-11-28'},signal:AbortSignal.timeout(15000),redirect:'manual'});
+   if(!profile.ok)throw new HttpError(502,'GitHub identity could not be verified. Please try again.');
+   stage='profile response';
    const user=await profile.json() as {id?:unknown;login?:unknown};
    if(!profile.ok||!Number.isSafeInteger(user.id)||Number(user.id)<=0||typeof user.login!=='string'||!/^[A-Za-z0-9-]{1,39}$/.test(user.login))throw new HttpError(502,'GitHub identity could not be verified. Please try again.');
    if(!allowedIds(config).has(String(user.id)))throw new HttpError(403,'This GitHub account has not been invited. Ask the Sigma owner for access.');
+   stage='session storage';
    const session=await createSession(config,String(user.id),user.login,cookieValue(request,SESSION_COOKIE));
    return redirect('/',[cookie(SESSION_COOKIE,session,SESSION_SECONDS),clearFlow]);
   }
   throw new HttpError(404,'Page not found.');
  }catch(error){
+  // Never log provider responses, credentials, authorization codes or cookies.
+  if(!(error instanceof HttpError))console.error('Sigma sign-in failure',{stage,kind:error instanceof SyntaxError?'invalid response':error instanceof TypeError?'request failure':'runtime failure'});
   const response=loginPage(config,error instanceof HttpError?error.message:'Sign-in is temporarily unavailable. Please try again.',error instanceof HttpError?error.status:502);
   response.headers.append('Set-Cookie',clearFlow);return response;
  }
