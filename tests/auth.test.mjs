@@ -40,6 +40,7 @@ globalThis.fetch=async(input,options)=>{
 };
 async function start(){
  const response=await authRoute(post('/auth/start'),config);assert.equal(response.status,303);
+ assert.equal(response.headers.get('Referrer-Policy'),'no-referrer');
  const url=new URL(response.headers.get('location'));
  assert.equal(url.origin,'https://github.com');assert.equal(url.pathname,'/login/oauth/authorize');
  assert.equal(url.searchParams.get('scope'),'');assert.equal(url.searchParams.get('code_challenge_method'),'S256');
@@ -53,9 +54,12 @@ const callback=(flow,code=crypto.randomUUID())=>req('/auth/callback?code='+code+
 try{
  assert.equal((await authRoute(req('/auth/login'),config)).status,200);
  assert.match(loginPage(config).headers.get('Content-Security-Policy'),/frame-ancestors 'none'/);
+ assert.equal(loginPage(config).headers.get('Referrer-Policy'),'same-origin');
+ assert.match(loginPage(config).headers.get('Content-Security-Policy'),/form-action 'self' https:\/\/github\.com;/);
  for(const path of ['/auth/start','/auth/logout']){
   assert.equal((await authRoute(req(path),config)).status,405);
   assert.equal((await authRoute(post(path,'https://evil.test'),config)).status,403);
+  assert.equal((await authRoute(post(path,'null'),config)).status,403);
  }
  for(const path of ['/api/library','/api/bars','/RULES.md','/_next/static/anything.js']){
   assert.equal((await authGate(req(path),config,next)).status,401);
@@ -78,6 +82,7 @@ try{
  const sessionRequest=req('/api/library',{headers:{cookie:sessionCookie}});
  assert.deepEqual(await identity(sessionRequest,config),{id:'github:43187933',name:'emailabir'});
  assert.equal(await (await authGate(sessionRequest,config,next)).text(),'protected');
+ assert.equal((await authGate(sessionRequest,config,next)).headers.get('Referrer-Policy'),'same-origin');
  assert.equal((await authRoute(callback(invited,code),config)).status,400,'Provider authorization codes cannot be replayed');
  const stored=JSON.stringify(raw.prepare('SELECT * FROM auth_sessions').all());
  assert.ok(!stored.includes(sessionCookie.split('=')[1]));assert.ok(!stored.includes('test-access-token'));assert.ok(!stored.includes('test-refresh-token'));
