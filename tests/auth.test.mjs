@@ -92,6 +92,19 @@ try{
  assert.deepEqual(await identity(sessionRequest,config),{id:'github:43187933',name:'emailabir'});
  assert.equal(await (await authGate(sessionRequest,config,next)).text(),'protected');
  assert.equal((await authGate(sessionRequest,config,next)).headers.get('Referrer-Policy'),'same-origin');
+ let assetCalls=0;
+ const assets={...config,ASSETS:{async fetch(){assetCalls++;return new Response('asset',{headers:{'Content-Type':'text/javascript'}});}}};
+ for(const path of ['/_next/static/chunks/app.js','/RULES.md','/favicon.svg']){
+  assert.equal((await authGate(req(path),assets,next)).status,401);
+  assert.equal(assetCalls,0,'Unauthenticated requests must not reach the asset binding');
+ }
+ for(const path of ['/_next/static/chunks/app.js','/RULES.md','/favicon.svg']){
+  const asset=await authGate(req(path,{headers:{cookie:sessionCookie}}),assets,next);
+  assert.equal(await asset.text(),'asset');assert.equal(asset.headers.get('Cache-Control'),'private, no-store');
+ }
+ assert.equal(assetCalls,3);
+ assert.equal(await (await authGate(sessionRequest,assets,next)).text(),'protected');
+ assert.equal(assetCalls,3,'API routes must reach the application handler');
  assert.equal((await authRoute(callback(invited,code),config)).status,400,'Provider authorization codes cannot be replayed');
  const stored=JSON.stringify(raw.prepare('SELECT * FROM auth_sessions').all());
  assert.ok(!stored.includes(sessionCookie.split('=')[1]));assert.ok(!stored.includes('test-access-token'));assert.ok(!stored.includes('test-refresh-token'));
