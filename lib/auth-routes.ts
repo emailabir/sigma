@@ -1,28 +1,27 @@
 import {EncryptJWT,jwtDecrypt} from 'jose';
 import {HttpError} from './access';
+import {emailAuthRoute,emailLoginPage} from './email-routes';
+import {privateHeaders,redirect,requirePost} from './auth-http';
+export {privateHeaders} from './auth-http';
 import {type AuthConfig,allowedIds,authOrigin,configured,cookie,cookieValue,createSession,deleteSession,digest,randomToken,tokenHash,SESSION_COOKIE,SESSION_SECONDS} from './session';
 
 const FLOW_COOKIE='__Host-sigma-oauth';
 const flowAudience='sigma-github-oauth';
 const escapeHtml=(value:string)=>value.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]!));
 // Keep the Origin on same-origin form POSTs so sign-in/out pass CSRF checks.
-export function privateHeaders(){return new Headers({'Cache-Control':'private, no-store','Referrer-Policy':'same-origin','X-Content-Type-Options':'nosniff','X-Frame-Options':'DENY'});}
 export function loginPage(config:AuthConfig,message='',status=200){
+ if(config.SIGMA_AUTH_MODE==='email')return emailLoginPage(config,message,status);
  const nonce=randomToken(),headers=privateHeaders();headers.set('Content-Type','text/html; charset=utf-8');
  headers.set('Content-Security-Policy',`default-src 'none'; style-src 'nonce-${nonce}'; form-action 'self' https://github.com; base-uri 'none'; frame-ancestors 'none'`);
  const ready=configured(config);
  return new Response(`<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Sign in · Sigma</title><style nonce="${nonce}">*{box-sizing:border-box}body{margin:0;background:#f5f8f7;color:#18322d;font:16px/1.6 system-ui,sans-serif;min-height:100vh;display:grid;place-items:center;padding:24px}main{width:min(100%,440px);background:white;padding:40px;border:1px solid #dce6e2;border-radius:16px;box-shadow:0 12px 40px #163c2410}.brand{color:#167557;font-weight:750;font-size:28px}.eyebrow{color:#647d74;font-size:12px;letter-spacing:.12em;margin-top:28px}h1{font-size:28px;line-height:1.2;margin:12px 0}p{color:#526b63}button{font:inherit;font-weight:650;color:white;background:#167557;border:0;border-radius:8px;padding:13px 18px;width:100%;cursor:pointer}button:hover{background:#105e45}button:focus-visible{outline:3px solid #75b9a1;outline-offset:3px}.small{font-size:13px;margin-bottom:0}.notice{background:#fff7e4;border:1px solid #ead9aa;padding:12px;border-radius:8px;color:#67552c}</style><main><div class="brand">Σ Sigma</div><div class="eyebrow">YOUR PRIVATE MARKET WORKSPACE</div><h1>Welcome back.</h1><p>Screen your stocks. Save your scans.<br>Keep an eye on your watchlist.</p>${message?`<p class="notice" role="alert">${escapeHtml(message)}</p>`:''}${ready?'<form action="/auth/start" method="post"><button type="submit">Sign in with GitHub</button></form>':'<p class="notice" role="status">Sign-in is being set up. Please try again shortly.</p>'}<p class="small">Invitation only. Your saved scans and notes are private to your account.</p><p class="small">GitHub shares your public profile identity with Sigma. No repository access is requested.</p></main></html>`,{status,headers});
-}
-function redirect(location:string,cookies:string[]=[]){const headers=privateHeaders();headers.set('Referrer-Policy','no-referrer');headers.set('Location',location);for(const value of cookies)headers.append('Set-Cookie',value);return new Response(null,{status:303,headers});}
-function requirePost(request:Request){
- if(request.method!=='POST')throw new HttpError(405,'Use the sign-in or sign-out button.');
- if(request.headers.get('origin')!==new URL(request.url).origin||request.headers.get('sec-fetch-site')==='cross-site')throw new HttpError(403,'Cross-origin request rejected.');
 }
 async function flowKey(config:AuthConfig){return digest('sigma/oauth-cookie/v1:'+config.SIGMA_GITHUB_CLIENT_SECRET);}
 
 // These are the only unauthenticated routes. OAuth access/refresh tokens never
 // leave this request or get stored; Sigma issues its own revocable session.
 export async function authRoute(request:Request,config:AuthConfig):Promise<Response|null>{
+ if(config.SIGMA_AUTH_MODE==='email')return emailAuthRoute(request,config);
  const url=new URL(request.url);if(!url.pathname.startsWith('/auth/'))return null;
  if(url.origin!==authOrigin(config))return new Response('Use the Sigma application address.',{status:403,headers:privateHeaders()});
  const clearFlow=cookie(FLOW_COOKIE,'',0);

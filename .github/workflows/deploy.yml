@@ -21,6 +21,13 @@ jobs:
       - run: npm test
       - run: npm run typecheck
       - run: npm run build
+      - name: Validate login setup and prepare deployment
+        id: login
+        run: node scripts/prepare-deploy.mjs
+        env:
+          SIGMA_AUTH_MODE: ${{ vars.SIGMA_AUTH_MODE }}
+          SIGMA_BREVO_API_KEY: ${{ secrets.SIGMA_BREVO_API_KEY }}
+          SIGMA_EMAIL_FROM: ${{ secrets.SIGMA_EMAIL_FROM }}
       # Secrets are provided only to the deployment step, never the client build.
       - name: Apply schema, deploy, and configure runtime secrets
         uses: cloudflare/wrangler-action@ebbaa1584979971c8614a24965b4405ff95890e0 # v4
@@ -30,14 +37,12 @@ jobs:
           wranglerVersion: '4.92.0'
           preCommands: npm run db:migrate
           command: deploy --config dist/server/wrangler.json
-          secrets: |
-            ALPACA_API_KEY_ID
-            ALPACA_API_SECRET_KEY
-            SIGMA_GITHUB_CLIENT_ID
-            SIGMA_GITHUB_CLIENT_SECRET
+          secrets: ${{ steps.login.outputs.runtime_secrets }}
         env:
           ALPACA_API_KEY_ID: ${{ secrets.ALPACA_API_KEY_ID }}
           ALPACA_API_SECRET_KEY: ${{ secrets.ALPACA_API_SECRET_KEY }}
           SIGMA_GITHUB_CLIENT_ID: ${{ secrets.SIGMA_GITHUB_CLIENT_ID }}
           SIGMA_GITHUB_CLIENT_SECRET: ${{ secrets.SIGMA_GITHUB_CLIENT_SECRET }}
+          SIGMA_BREVO_API_KEY: ${{ secrets.SIGMA_BREVO_API_KEY }}
+          SIGMA_EMAIL_FROM: ${{ secrets.SIGMA_EMAIL_FROM }}
           WRANGLER_WRITE_LOGS: 'false'

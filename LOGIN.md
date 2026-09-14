@@ -1,37 +1,52 @@
-# Sigma login and invitations
+# Sigma email login and invitations
 
-Sigma uses **Sign in with GitHub**. Each invited person needs a GitHub account. There is no Cloudflare Zero Trust subscription, card entry, password database, or email delivery service to configure.
+Invited users enter their email address, receive an eight-digit code, and enter it in the same browser. No GitHub account or password is needed in email mode. Sigma sends login emails through Brevo and stores invitations and sessions in Cloudflare D1.
 
-## One-time owner setup
+**Activation is explicit.** GitHub login stays active until email delivery and the owner's invitation are ready. Set repository variable `SIGMA_AUTH_MODE=email` only after setup. Neither method permits open registration.
 
-1. Open [GitHub OAuth app registration](https://github.com/settings/applications/new).
-2. Name: **Sigma**. Homepage: `https://sigma.emailabir.workers.dev`. Callback: `https://sigma.emailabir.workers.dev/auth/callback`.
-3. Leave **Allow wildcard matching** and **Enable Device Flow** disabled. Keep **Expire user access tokens** enabled. Register the application.
-4. Generate a client secret. In [Sigma's repository Secrets](https://github.com/emailabir/sigma/settings/secrets/actions), save the **Client ID** as `SIGMA_GITHUB_CLIENT_ID` and the **Client secret** as `SIGMA_GITHUB_CLIENT_SECRET`. These are different from `CLOUDFLARE_API_TOKEN` and the Alpaca keys. Never commit their values.
-5. Run **Actions → Deploy Sigma to Cloudflare → Run workflow → main**. It applies the session database migration and sends the secrets to the Worker after building.
-6. Open [Sigma](https://sigma.emailabir.workers.dev) and click **Sign in with GitHub**. The current invitation list contains only the owner's numeric account ID, `43187933` (`emailabir`).
+## One-time setup
 
-The OAuth app asks for public identity only, with no repository or private-email scope. The provider's access/refresh tokens are used only during callback processing and never saved in D1, browser storage, or the app's session cookie.
+1. Create a free [Brevo account](https://www.brevo.com/). Complete its account verification and any requested transactional-email activation.
+2. Add **Sigma** as a sender using an email address you control, and complete its email verification. Brevo documents that it may substitute its own compliant sender address when using a free email address. Delivery depends on account approval and recipient filtering.
+3. Generate a **Brevo API key**, not an SMTP key. Save it as repository secret `SIGMA_BREVO_API_KEY`. Never send it in chat or commit it.
+4. Save the verified sender email address alone as repository secret `SIGMA_EMAIL_FROM` (no display name or angle brackets).
+5. Apply `npm run db:migrate` and create the owner's invitation below. Confirm the owner's email directly; never infer an account link from a public profile or username.
+6. In **Settings → Secrets and variables → Actions → Variables**, set `SIGMA_AUTH_MODE` to `email`.
+7. Run **Actions → Deploy Sigma to Cloudflare → Run workflow → main**. Email credentials are checked before deployment and sent only to Worker runtime after the build.
+8. Open [Sigma](https://sigma.emailabir.workers.dev/), request a code and verify delivery and login. Existing GitHub sessions require email verification after switching. Stored scans and watchlists retain their ownership.
 
-## Invite someone
+Brevo's Free plan currently allows 300 emails/day. Sigma separately caps login emails at 100 per UTC day, five per invited address per hour, and one per address per minute window. These protect quotas and limit abuse; they do not guarantee delivery. No mailing-list subscriptions are created.
 
-Ask for their GitHub username. Verify the account with the person, then get its numeric `id` from `https://api.github.com/users/USERNAME` (replace USERNAME). Add that ID to the comma-separated `SIGMA_GITHUB_USER_IDS` value in `wrangler.jsonc`, commit and deploy. Share the Sigma URL with that person. There is no automated invitation email.
+## Preserve the owner's saved data
 
-Use numeric IDs, not usernames: usernames can change or be reassigned. Each account's saved data uses the stable `github:ID` key. The displayed username is informational.
+From the repository, using Node 24 and Cloudflare CLI access:
 
-## Remove access
+```powershell
+node scripts/invite-email.mjs OWNER_EMAIL github:43187933
+```
 
-Remove the numeric ID from `SIGMA_GITHUB_USER_IDS` and deploy. The list is checked on every protected request, so existing sessions no longer grant access. Previously rendered information cannot be recalled from a person's device. Stored scans and notes remain unless separately deleted.
+Replace `OWNER_EMAIL` with the confirmed address. This links email login to the existing `github:43187933` data owner. The address stays in D1, not the public source repository. The person must still prove control by entering an emailed code. No automatic account linking is performed.
 
-**Sign out** removes the current server session and clears the browser cookie. Sessions expire after seven days and are limited to five per account. New sign-ins rotate the current cookie. To revoke every session immediately, an administrator can clear the `auth_sessions` table through D1; saved scans and watchlist tables are separate.
+## Invite another person
 
-## Implementation and limits
+```powershell
+node scripts/invite-email.mjs PERSON_EMAIL
+```
 
-- Authorization-code flow uses state plus S256 PKCE, a fixed HTTPS origin and exact callback URL. A ten-minute encrypted HttpOnly cookie holds only the transient state and verifier; GitHub accepts each authorization code once.
-- D1 stores only SHA-256 hashes of random 256-bit session tokens. Session cookies use the `__Host-` prefix, Secure, HttpOnly and SameSite=Lax.
-- Public login pages have a restrictive Content Security Policy. All responses containing user data use `private, no-store`. Sign-in, sign-out and library writes reject cross-origin POST requests.
-- Missing configuration denies data access. Uninvited OAuth profiles never receive a session. Caller-supplied identity headers are ignored.
-- Invitations and session ownership are separate from GitHub repository access. The source repository can remain public while Sigma stays private.
-- The previous Cloudflare Access implementation was never activated. No saved data is automatically linked from an Access identity or by matching email.
+This allocates a new stable account ID. The script fails if the email or ID is already linked instead of silently merging accounts. Share the Sigma URL with that person; the script sends no invitation email. The login form sends codes only to enabled invitations.
 
-References: [GitHub OAuth registration](https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/creating-an-oauth-app), [authorization flow and PKCE](https://docs.github.com/en/apps/oauth-apps/building-oauth-apps/authorizing-oauth-apps).
+## Remove or restore access
+
+In Cloudflare's private D1 console, set `email_identities.enabled` to `0` for the exact address to remove access, or `1` to restore it. Every protected request checks the invitation. Do not change `user_id`: it identifies the person's stored scans and notes. Revocation preserves stored data and cannot recall information already displayed on a device.
+
+## Security and behavior
+
+- Codes expire in ten minutes, work once, and require the browser cookie from the request. A new code replaces the previous code for that address.
+- Five wrong guesses exhaust a code. Atomic D1 counters limit sending and verification across Worker instances. Sign-in, verification, sign-out and library writes enforce request Origin checks.
+- D1 stores only hashed code challenges and random 256-bit session tokens. The code hash includes a random browser secret that is not stored in D1. Raw codes go only to the delivery provider and recipient inbox, never app logs or URLs.
+- Cookies use Secure, HttpOnly, SameSite=Lax and the `__Host-` prefix. Sessions last seven days, with up to five per account. Sign out revokes the current session.
+- APIs, app routes and static assets remain protected. Missing credentials fail closed. Uninvited addresses receive generic confirmation but no code or session. Provider errors cannot reveal credentials or private responses.
+- GitHub callbacks and old GitHub sessions cannot authenticate in email mode. For controlled rollback, set `SIGMA_AUTH_MODE=github` and redeploy with the existing OAuth secrets. See [GITHUB_LOGIN.md](GITHUB_LOGIN.md).
+- The GitHub workflow applies its mode through `scripts/prepare-deploy.mjs`. A direct manual deployment must explicitly set its intended mode in the generated Worker configuration. Local credentials belong in ignored `.dev.vars`.
+
+References: [Free plan](https://help.brevo.com/hc/en-us/articles/208589409-About-Brevo-s-pricing-plans), [sender verification](https://help.brevo.com/hc/en-us/articles/208836149-Create-a-new-sender-From-name-and-From-email), [sender substitution](https://help.brevo.com/hc/en-us/articles/14925263522578-Comply-with-Gmail-Yahoo-and-Microsoft-s-requirements-for-email-senders), [transactional API](https://developers.brevo.com/docs/send-a-transactional-email).

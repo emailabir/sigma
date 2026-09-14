@@ -1,6 +1,6 @@
 # Sigma
 
-A daily breakout screener with **Screener · Saved scans · Watchlist**, an S&P 500 / Nasdaq-100 selector, and externally editable Markdown rules. UI and backend run together on Cloudflare Workers. Cloudflare D1 stores saved data; GitHub OAuth supplies verified identities, restricted to an explicit invitation list. No Cloudflare Zero Trust subscription is needed.
+A daily breakout screener with **Screener · Saved scans · Watchlist**, an S&P 500 / Nasdaq-100 selector, and externally editable Markdown rules. UI and backend run together on Cloudflare Workers. Cloudflare D1 stores saved data and invitation-only sessions. Email-code login uses Brevo; GitHub remains the fallback until email setup is activated. No Cloudflare Zero Trust subscription is needed. See [LOGIN.md](LOGIN.md) for email setup and preserving existing accounts.
 
 ## Workspace
 
@@ -9,7 +9,7 @@ A daily breakout screener with **Screener · Saved scans · Watchlist**, an S&P 
 - **Changes:** completed scans compare with the nearest earlier market date having identical strategy settings, formula version and index membership. Newly / still / no longer qualified exclude unavailable data. Partial scans and same-day reruns are excluded from comparison baselines.
 - **Watchlist:** stars and notes sync between devices. Status comes from that user's latest completed saved scan containing the stock; its date and rules name are shown. It is not a live quote or new scan.
 
-Every database operation is scoped to the verified GitHub account ID. Client-supplied user IDs and identity headers cannot select someone else's data. Snapshots contain closing-price charts, not full raw OHLCV history or credentials. Historical plans are labeled. Removing access blocks new requests; it does not erase stored data.
+Every database operation is scoped to the verified account's stable ID. Email invitations can explicitly retain an existing GitHub data owner. Client-supplied user IDs and identity headers cannot select someone else's data. Snapshots contain closing-price charts, not full raw OHLCV history or credentials. Historical plans are labeled. Removing access blocks new requests; it does not erase stored data.
 
 ## Market data and editable rules
 
@@ -47,15 +47,15 @@ In `emailabir/sigma` → **Settings → Secrets and variables → Actions**, kee
 - `SIGMA_GITHUB_CLIENT_ID` and `SIGMA_GITHUB_CLIENT_SECRET` from the OAuth app (these identify Sigma, not a personal access token).
 - `CLOUDFLARE_API_TOKEN`: a token scoped to the Sigma account with Account → Workers Scripts → Edit and Account → D1 → Edit. Use an appropriate limited lifetime.
 
-Run **Actions → Deploy Sigma to Cloudflare → Run workflow** on `main`. It tests and builds without application credentials, then applies migrations, deploys and transfers the Alpaca and GitHub OAuth secrets directly to Worker runtime. Secrets never go into the public repository, client bundle or a downloadable artifact. Only trusted maintainers should modify/run deployment workflows.
+Run **Actions → Deploy Sigma to Cloudflare → Run workflow** on `main`. It tests and builds without application credentials, then applies migrations, deploys and transfers Alpaca plus the selected login provider's secrets directly to Worker runtime. Repository variable `SIGMA_AUTH_MODE=email` selects email login; a missing variable defaults to GitHub. Email mode needs repository secrets `SIGMA_BREVO_API_KEY` and `SIGMA_EMAIL_FROM` plus a provisioned D1 invitation. See [LOGIN.md](LOGIN.md). Secrets never go into the public repository, client bundle or a downloadable artifact. Only trusted maintainers should modify/run deployment workflows.
 
-Checks run on pushes and pull requests without deployment secrets. Deployment is manual. All five repository secrets above must be configured before deployment; local Wrangler login does not grant GitHub permission.
+Checks run on pushes and pull requests without deployment secrets. Deployment is manual. The Cloudflare token, Alpaca keys and selected login provider's credentials must be configured before deployment; local Wrangler login does not grant GitHub permission.
 
 ## Development and validation
 
 `npm run dev` starts development; `npm run build` produces the Worker and assets. Authentication stays enabled in development. For full authenticated development, use a separate HTTPS development deployment and OAuth app with its own exact callback and `SIGMA_AUTH_ORIGIN`; localhost without a valid session is deliberately denied. Pure strategy and storage tests need no production credentials. Ignored `.dev.vars` may hold local server secrets; never commit it.
 
-`npm test` covers strategy math, rules, provider contracts, actual SQLite schema/retention, immutable retries, user isolation, notes, dotted ticker symbols, comparisons and OAuth state/PKCE checks, invitation enforcement, hashed sessions, expiry, revocation and protected-route checks. Storage and login tests use Node 24 SQLite and a mocked OAuth provider; no real credentials are needed. `npm run typecheck` checks application types.
+`npm test` covers strategy math, rules, provider contracts, actual SQLite schema/retention, immutable retries, user isolation, notes, dotted symbols, comparisons, OAuth state/PKCE, email code concurrency and consumption, browser binding, expiry, rate limits, invitation enforcement, preserved ownership and protected assets. Login tests use Node 24 SQLite and mocked providers; no real credentials are needed. `npm run typecheck` checks application types.
 
 ## Sources
 
