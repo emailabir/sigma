@@ -1,3 +1,7 @@
+# Login migration
+
+Firebase setup is documented in [FIREBASE_LOGIN.md](FIREBASE_LOGIN.md). The Brevo instructions below describe the legacy email-code option retained during migration.
+
 # Sigma email login and invitations
 
 Invited users enter their email address, receive an eight-digit code, and enter it in the same browser. No GitHub account or password is needed in email mode. Sigma sends login emails through Brevo and stores invitations and sessions in Cloudflare D1.

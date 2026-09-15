@@ -1,6 +1,7 @@
 import {EncryptJWT,jwtDecrypt} from 'jose';
 import {HttpError} from './access';
 import {emailAuthRoute,emailLoginPage} from './email-routes';
+import {firebaseAuthRoute,firebaseLoginPage} from './firebase-routes';
 import {privateHeaders,redirect,requirePost} from './auth-http';
 export {privateHeaders} from './auth-http';
 import {type AuthConfig,allowedIds,authOrigin,configured,cookie,cookieValue,createSession,deleteSession,digest,randomToken,tokenHash,SESSION_COOKIE,SESSION_SECONDS} from './session';
@@ -10,6 +11,7 @@ const flowAudience='sigma-github-oauth';
 const escapeHtml=(value:string)=>value.replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]!));
 // Keep the Origin on same-origin form POSTs so sign-in/out pass CSRF checks.
 export function loginPage(config:AuthConfig,message='',status=200){
+ if(config.SIGMA_AUTH_MODE==='firebase')return firebaseLoginPage(config,message,status);
  if(config.SIGMA_AUTH_MODE==='email')return emailLoginPage(config,message,status);
  const nonce=randomToken(),headers=privateHeaders();headers.set('Content-Type','text/html; charset=utf-8');
  headers.set('Content-Security-Policy',`default-src 'none'; style-src 'nonce-${nonce}'; form-action 'self' https://github.com; base-uri 'none'; frame-ancestors 'none'`);
@@ -21,6 +23,7 @@ async function flowKey(config:AuthConfig){return digest('sigma/oauth-cookie/v1:'
 // These are the only unauthenticated routes. OAuth access/refresh tokens never
 // leave this request or get stored; Sigma issues its own revocable session.
 export async function authRoute(request:Request,config:AuthConfig):Promise<Response|null>{
+ if(config.SIGMA_AUTH_MODE==='firebase')return firebaseAuthRoute(request,config);
  if(config.SIGMA_AUTH_MODE==='email')return emailAuthRoute(request,config);
  const url=new URL(request.url);if(!url.pathname.startsWith('/auth/'))return null;
  if(url.origin!==authOrigin(config))return new Response('Use the Sigma application address.',{status:403,headers:privateHeaders()});

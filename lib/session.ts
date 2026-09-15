@@ -9,6 +9,8 @@ export type AuthConfig={
  SIGMA_AUTH_MODE?:string;
  SIGMA_BREVO_API_KEY?:string;
  SIGMA_EMAIL_FROM?:string;
+ SIGMA_FIREBASE_PROJECT_ID?:string;
+ SIGMA_FIREBASE_API_KEY?:string;
 };
 export function allowedIds(config:AuthConfig):Set<string>{
  const ids=(config.SIGMA_GITHUB_USER_IDS??'').split(',').map(s=>s.trim());
@@ -22,6 +24,7 @@ export function normalizeEmail(value:string){
  return email.length<=254&&/^[a-z0-9.!#$%&'*+/=?^_`{|}~-]{1,64}@[a-z0-9](?:[a-z0-9-]*[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]*[a-z0-9])?)+$/.test(email)&&!email.startsWith('.')&&!email.includes('..')&&!email.includes('.@')?email:null;
 }
 export function configured(config:AuthConfig){
+ if(config.SIGMA_AUTH_MODE==='firebase')return !!(config.SIGMA_DB&&authOrigin(config)&&/^[a-z][a-z0-9-]{4,28}[a-z0-9]$/.test(config.SIGMA_FIREBASE_PROJECT_ID??'')&&/^[A-Za-z0-9_-]{20,100}$/.test(config.SIGMA_FIREBASE_API_KEY??''));
  if(config.SIGMA_AUTH_MODE==='email')return !!(config.SIGMA_DB&&authOrigin(config)&&config.SIGMA_BREVO_API_KEY?.trim()&&normalizeEmail(config.SIGMA_EMAIL_FROM??''));
  if(config.SIGMA_AUTH_MODE&&config.SIGMA_AUTH_MODE!=='github')return false;
  return !!(config.SIGMA_DB&&authOrigin(config)&&config.SIGMA_GITHUB_CLIENT_ID?.trim()&&config.SIGMA_GITHUB_CLIENT_SECRET?.trim()&&allowedIds(config).size);
@@ -38,6 +41,10 @@ export function cookie(name:string,value:string,maxAge:number){return `${name}=$
 export async function readSession(request:Request,config:AuthConfig){
  const token=cookieValue(request,SESSION_COOKIE);
  if(!token||!/^[A-Za-z0-9_-]{43}$/.test(token)||!config.SIGMA_DB)return null;
+ if(config.SIGMA_AUTH_MODE==='firebase'){
+  const row=await config.SIGMA_DB.prepare('SELECT s.user_id, s.email FROM firebase_sessions s JOIN firebase_accounts a ON a.project_id = s.project_id AND a.firebase_uid = s.firebase_uid AND a.user_id = s.user_id JOIN email_identities i ON i.email = s.email AND i.user_id = s.user_id AND i.enabled = 1 WHERE s.token_hash = ? AND s.project_id = ? AND s.expires_at > ?').bind(await tokenHash(token),config.SIGMA_FIREBASE_PROJECT_ID,Math.floor(Date.now()/1000)).first<{user_id:string;email:string}>();
+  return row?{id:row.user_id,name:row.email}:null;
+ }
  if(config.SIGMA_AUTH_MODE==='email'){
   const row=await config.SIGMA_DB.prepare('SELECT s.user_id, s.email FROM email_sessions s JOIN email_identities i ON i.email = s.email AND i.user_id = s.user_id AND i.enabled = 1 WHERE s.token_hash = ? AND s.expires_at > ?').bind(await tokenHash(token),Math.floor(Date.now()/1000)).first<{user_id:string;email:string}>();
   return row?{id:row.user_id,name:row.email}:null;
@@ -58,6 +65,6 @@ export async function createSession(config:AuthConfig,githubId:string,login:stri
 }
 export async function deleteSession(request:Request,config:AuthConfig){
  const token=cookieValue(request,SESSION_COOKIE);
- const table=config.SIGMA_AUTH_MODE==='email'?'email_sessions':'auth_sessions';
+ const table=config.SIGMA_AUTH_MODE==='firebase'?'firebase_sessions':config.SIGMA_AUTH_MODE==='email'?'email_sessions':'auth_sessions';
  if(token&&config.SIGMA_DB)await config.SIGMA_DB.prepare(`DELETE FROM ${table} WHERE token_hash = ?`).bind(await tokenHash(token)).run();
 }

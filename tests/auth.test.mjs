@@ -5,7 +5,7 @@ import {DatabaseSync} from 'node:sqlite';
 import {EncryptJWT} from 'jose';
 
 fs.mkdirSync('.test-build',{recursive:true});
-for(const name of ['session','access','auth-http','email-login','email-routes','auth-routes','auth-gate']){
+for(const name of ['session','access','auth-http','email-login','email-routes','firebase-client','firebase-login','firebase-routes','auth-routes','auth-gate']){
  const source=fs.readFileSync(`lib/${name}.ts`,'utf8').replace(/from '(\.\/[^']+)'/g,(_,path)=>`from '${path}.js'`);
  fs.writeFileSync(`.test-build/${name}.js`,ts.transpileModule(source,{compilerOptions:{module:ts.ModuleKind.ESNext,target:ts.ScriptTarget.ES2022}}).outputText);
 }

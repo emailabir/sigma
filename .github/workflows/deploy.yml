@@ -26,6 +26,8 @@ jobs:
         run: node scripts/prepare-deploy.mjs
         env:
           SIGMA_AUTH_MODE: ${{ vars.SIGMA_AUTH_MODE }}
+          SIGMA_FIREBASE_PROJECT_ID: ${{ vars.SIGMA_FIREBASE_PROJECT_ID }}
+          SIGMA_FIREBASE_API_KEY: ${{ vars.SIGMA_FIREBASE_API_KEY }}
           SIGMA_BREVO_API_KEY: ${{ secrets.SIGMA_BREVO_API_KEY }}
           SIGMA_EMAIL_FROM: ${{ secrets.SIGMA_EMAIL_FROM }}
       # Secrets are provided only to the deployment step, never the client build.

@@ -1,3 +1,5 @@
+> Firebase email/password and Google sign-in setup: [FIREBASE_LOGIN.md](FIREBASE_LOGIN.md). Cloudflare hosting, invitations and existing saved data are preserved.
+
 # Sigma
 
 A daily breakout screener with **Screener · Saved scans · Watchlist**, an S&P 500 / Nasdaq-100 selector, and externally editable Markdown rules. UI and backend run together on Cloudflare Workers. Cloudflare D1 stores saved data and invitation-only sessions. Email-code login uses Brevo; GitHub remains the fallback until email setup is activated. No Cloudflare Zero Trust subscription is needed. See [LOGIN.md](LOGIN.md) for email setup and preserving existing accounts.
